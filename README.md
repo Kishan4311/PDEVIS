@@ -164,10 +164,3 @@ For major changes, please open an issue first to discuss the design.
 
 ---
 
-## 📄 Citation
-
-If you use this work in your research, please cite:
-
-**Cannot Wait to Verify: Parallel Drafting to Eliminate Verifier Idle Time in Speculative Decoding**
-
-```
