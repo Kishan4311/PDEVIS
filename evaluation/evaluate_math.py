@@ -1,0 +1,221 @@
+#!/usr/bin/env python
+# coding=utf-8
+"""
+python /home/iitb/Kishan_SpecDec/_spade2/evaluation/math/evaluate_math.py \
+  --draft_device "cuda:1" \
+  --target_device "cuda:3" \
+  --dataset "/home/iitb/Kishan_SpecDec/_spade2/Data/math.json" \
+  --code_path "/home/iitb/Kishan_SpecDec/_spade2/appInference2.py" \
+  --k 80 \
+  --gen_len 64 \
+  --gamma 6 \
+  --target_model "llama-70b" \
+  --drafter_model "llama-3b" \
+  --output "/home/iitb/Kishan_SpecDec/_spade2/evaluation/math/llama_math_result_point9_gm6_3B_70B_genLen64.json"
+
+"""
+
+import json
+import argparse
+import time
+import os
+from typing import Dict, Any
+from tqdm import tqdm
+import torch
+import numpy as np
+import random
+import sys
+
+# ---------------------------------------------------------
+# Import SPADE inference code
+# ---------------------------------------------------------
+def load_inference(code_path):
+    code_dir = os.path.dirname(code_path)
+    sys.path.insert(0, code_dir)
+    module_name = os.path.basename(code_path).replace(".py", "")
+    return __import__(module_name)
+
+# ---------------------------------------------------------
+# Utils
+# ---------------------------------------------------------
+def set_seed(seed: int = 42):
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+
+
+def load_math(path: str, k: int):
+    with open(path, "r") as f:
+        data = json.load(f)
+    return data[:k]
+
+
+def format_math_prompt(problem: str) -> str:
+    return (
+        "Solve the following math problem.\n\n"
+        "Rules:\n"
+        "- Write no more than 2 sentences total.\n"
+        "- Mention only the key observation.\n"
+        "- End with the final answer, preferably boxed.\n"
+        "- Do not include step-by-step derivations.\n\n"
+        f"Problem:\n{problem}\n\n"
+        "Solution:"
+    )
+
+# ---------------------------------------------------------
+# Main evaluation loop
+# ---------------------------------------------------------
+def main(args):
+    set_seed(42)
+
+    inference_mod = load_inference(args.code_path)
+
+    cli = inference_mod.InferenceCLI(
+        device="cuda:0",
+        device_target=args.target_device,
+        device_drafter=args.draft_device,
+        target_model=inference_mod.ModelsCatalog.model_id(args.target_model),
+        drafter_model=inference_mod.ModelsCatalog.model_id(args.drafter_model),
+    )
+
+    cli.gen_len = args.gen_len
+    cli.gamma = args.gamma
+    cli.chat = True
+
+    dataset = load_math(args.dataset, args.k)
+    os.makedirs(os.path.dirname(args.output), exist_ok=True)
+
+    out_f = open(args.output, "w")
+    out_f.write("[\n")
+    first = True
+
+    print(f"Running evaluation on {len(dataset)} samples")
+
+    for item in tqdm(dataset, desc="Evaluating Math"):
+        qid = item["question_id"]
+        raw_prompt = item["prompt"][0]   # math dataset uses list
+        prompt = format_math_prompt(raw_prompt)
+        label = item["label"]
+
+        entry: Dict[str, Any] = {
+            "question_id": qid,
+            "prompt": raw_prompt,
+            "label": label,
+            "type": item.get("type"),
+            "level": item.get("level"),
+        }
+
+        # ---------------- Target only ----------------
+        cli.spec = False
+        cli.target_gen = True
+        cli.dr = False
+
+        t0 = time.time()
+        out = cli.run_once(prompt)
+        t1 = time.time()
+
+        tgt_text = out["target"]
+        tgt_tokens = len(cli.tokenizer.encode(tgt_text))
+
+        entry["target_only"] = {
+            "output_text": tgt_text,
+            "tokens_generated": tgt_tokens,
+            "throughput_toks_per_sec": tgt_tokens / max(1e-6, t1 - t0),
+            "mean_skip": 0,
+        }
+
+        # ---------------- Drafter only ----------------
+        cli.spec = False
+        cli.target_gen = False
+        cli.dr = True
+
+        t0 = time.time()
+        out = cli.run_once(prompt)
+        t1 = time.time()
+
+        dr_text = out["drafter"]
+        dr_tokens = len(cli.tokenizer.encode(dr_text))
+        mean_skip = cli.drafter.model.pop_mean_skip()
+
+        entry["drafter_only"] = {
+            "output_text": dr_text,
+            "tokens_generated": dr_tokens,
+            "throughput_toks_per_sec": dr_tokens / max(1e-6, t1 - t0),
+            "mean_skip": mean_skip,
+        }
+
+        # ---------------- Speculative ----------------
+        cli.spec = True
+        cli.target_gen = False
+        cli.dr = False
+
+        set_seed(42)
+        t0 = time.time()
+
+        output_ids, acc_rate, target_calls = inference_mod.speculative_generate(
+            cli.tokenizer(
+                cli.tokenizer.apply_chat_template(
+                    [{"role": "user", "content": prompt}],
+                    add_generation_prompt=True,
+                    tokenize=False,
+                    enable_thinking=False,
+                ),
+                return_tensors="pt",
+            ).input_ids[0].tolist(),
+            cli.drafter,
+            cli.target,
+            tokenizer=cli.tokenizer,
+            gamma=cli.gamma,
+            max_gen_len=cli.gen_len,
+            logits_processor=cli.processor,
+            eos_tokens_id=cli.end_tokens,
+        )
+
+        t1 = time.time()
+        spec_text = cli.tokenizer.decode(output_ids, skip_special_tokens=True)
+        mean_skip = cli.drafter.model.pop_mean_skip()
+
+        entry["speculative"] = {
+            "output_text": spec_text,
+            "tokens_generated": len(output_ids),
+            "throughput_toks_per_sec": len(output_ids) / max(1e-6, t1 - t0),
+            "acceptance_rate": acc_rate,
+            "spec_target_model_calls_reported": target_calls,
+            "mean_skip": mean_skip,
+        }
+
+        if not first:
+            out_f.write(",\n")
+        out_f.write(json.dumps(entry, indent=2))
+        out_f.flush()
+        first = False
+
+    out_f.write("\n]\n")
+    out_f.close()
+
+    print(f"\nSaved results to {args.output}")
+
+# ---------------------------------------------------------
+# CLI
+# ---------------------------------------------------------
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser("Math Evaluation with SPADE")
+
+    parser.add_argument("--draft_device", type=str, required=True)
+    parser.add_argument("--target_device", type=str, required=True)
+    parser.add_argument("--dataset", type=str, required=True)
+    parser.add_argument("--code_path", type=str, required=True)
+
+    parser.add_argument("--k", type=int, default=100)
+    parser.add_argument("--gen_len", type=int, default=64)
+    parser.add_argument("--gamma", type=int, default=6)
+
+    parser.add_argument("--target_model", type=str, required=True)
+    parser.add_argument("--drafter_model", type=str, required=True)
+    parser.add_argument("--output", type=str, required=True)
+
+    args = parser.parse_args()
+    main(args)
