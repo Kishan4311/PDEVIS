@@ -1,4 +1,5 @@
-### Can't Wait to Verify : Parallel Drafting to Eliminate Verifier Idle Time in Speculative Decoding(PDEVIS)
+# PDEVIS
+### Can't Wait to Verify : Parallel Drafting to Eliminate Verifier Idle Time in Speculative Decoding
 
 **PDEVIS** is a plug-and-play acceleration framework for speculative decoding that parallelizes draft generation across transformer layers. By reducing verifier idle time using hidden-state divergence checks, PDEVIS improves GPU utilization and end-to-end latency without retraining, achieving up to **1.7× draft speedup** with minimal accuracy loss.
 
