@@ -94,7 +94,7 @@ All evaluation scripts include detailed usage instructions at the top of each fi
 ### Evaluate WMT Dataset
 
 ```bash
-python evaluation/wmt/evaluate_wmt.py \
+python evaluation/evaluate_wmt.py \
   --draft_device cuda:0 \
   --target_device cuda:3 \
   --dataset Data/wmt.json \
@@ -104,7 +104,7 @@ python evaluation/wmt/evaluate_wmt.py \
   --gamma 6 \
   --target_model llama-70b \
   --drafter_model llama-3b \
-  --output evaluation/wmt/llama_wmt_results.json
+  --output evaluation/llama_wmt_results.json
 ```
 
 ---
@@ -112,10 +112,10 @@ python evaluation/wmt/evaluate_wmt.py \
 ### Evaluate SpecBench Dataset
 
 ```bash
-python evaluation/specbench/evaluate_specbench.py \
+python evaluation/evaluate_specbench.py \
   --code-path appInference.py \
   --specbench Data/Specbench_filtered.jsonl \
-  --out evaluation/specbench/qwen_specbench_results.jsonl \
+  --out evaluation/qwen_specbench_results.jsonl \
   --drafter-device cuda:1 \
   --target-device cuda:2 \
   --gamma 6 \
@@ -132,22 +132,22 @@ python evaluation/specbench/evaluate_specbench.py \
 ### WMT Summary
 
 ```bash
-python summary/wmt/summary_wmt.py \
-  --input evaluation/wmt/llama_wmt_results.json \
-  --output summary/wmt/llama_wmt_summary.json
+python summary/summary_wmt.py \
+  --input evaluation/llama_wmt_results.json \
+  --output summary/llama_wmt_summary.json
 ```
 
 ### SpecBench Summary
 
 ```bash
-python summary/specbench/summary_specbench.py \
-  --input evaluation/specbench/qwen_specbench_results.jsonl \
-  --output summary/specbench/qwen_specbench_summary.json
+python summary/summary_specbench.py \
+  --input evaluation/qwen_specbench_results.jsonl \
+  --output summary/qwen_specbench_summary.json
 ```
 
 ---
 
-## ⚙️ Configuration & Model Selection
+## ⚙️ Model Selection
 
 * Model names and device options are specified via command-line arguments
 * For best cost–accuracy trade-offs:
@@ -157,10 +157,4 @@ python summary/specbench/summary_specbench.py \
 
 ---
 
-## 🤝 Contributing
-
-Contributions, issues, and feature requests are welcome.
-For major changes, please open an issue first to discuss the design.
-
----
 
