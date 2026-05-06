@@ -43,6 +43,10 @@ from huggingface_hub import login
 login("<YOUR_HF_TOKEN>")
 ```
 
+## Model Config
+
+* Refer to model_config/readme.md and apply the changes
+
 ---
 
 ## 💬 Run Interactive Chat
