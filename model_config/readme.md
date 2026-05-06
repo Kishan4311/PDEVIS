@@ -1,4 +1,4 @@
-# README — Apply ALD (Adaptive Layer-parallel Drafting) Patch
+# Apply ALD (Adaptive Layer-parallel Drafting) Patch
 
 Apply the following changes in BOTH files:
 
