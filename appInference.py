@@ -1,6 +1,6 @@
 # Usable
 '''
-    python /home/iitb/Kishan_SpecDec/_spade2/appInference2.py \
+    python appInference.py \
         --target_model "llama-70b" \
         --drafter_model "llama-8b" \
         --device_target 'cuda:1' \
